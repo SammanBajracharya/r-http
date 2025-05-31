@@ -1,0 +1,4 @@
+Connected to server at port 42069
+New client connected
+Do you have what it takes to be an engineer at TheStartup™?
+Connection closed
