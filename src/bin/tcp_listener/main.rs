@@ -1,7 +1,7 @@
+use std::io::{self, ErrorKind, Read};
 use std::net::{TcpListener, TcpStream};
 use std::sync::mpsc;
 use std::thread;
-use std::io::{self, Read, ErrorKind};
 
 fn main() -> io::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:42069")?;
@@ -35,11 +35,12 @@ fn get_lines_channel(mut stream: TcpStream) -> mpsc::Receiver<String> {
     thread::spawn(move || {
         loop {
             let n = match stream.read(&mut buffer) {
-                Ok(0) => { break }
+                Ok(0) => break,
                 Ok(n) => n,
                 Err(e) => {
-                    if e.kind() == ErrorKind::UnexpectedEof { break; }
-                    else {
+                    if e.kind() == ErrorKind::UnexpectedEof {
+                        break;
+                    } else {
                         eprintln!("error: {}", e);
                         break;
                     }
@@ -55,9 +56,11 @@ fn get_lines_channel(mut stream: TcpStream) -> mpsc::Receiver<String> {
             };
 
             let parts: Vec<&str> = chunk.split('\n').collect();
-            for i in 0..parts.len() - 1 {
-                let full_line = format!("{}{}", current_line_contents, parts[i]);
-                if sx.send(full_line).is_err() { return; }
+            for part in parts.iter().take(parts.len() - 1) {
+                let full_line = format!("{}{}", current_line_contents, part);
+                if sx.send(full_line).is_err() {
+                    return;
+                }
                 current_line_contents.clear();
             }
 
