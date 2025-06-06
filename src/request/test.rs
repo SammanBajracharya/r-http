@@ -48,9 +48,9 @@ mod tests {
         assert_eq!(req.request_line.method, "GET");
         assert_eq!(req.request_line.request_target, "http://localhost:42069/");
         assert_eq!(req.request_line.http_version, "HTTP/1.1");
-        assert_eq!(req.headers("Host").unwrap(), "localhost:42069");
-        assert_eq!(req.headers("User-Agent").unwrap(), "curl/7.81.0");
-        assert_eq!(req.headers("Accept").unwrap(), "*/*");
+        assert_eq!(req.header("Host").unwrap(), "localhost:42069");
+        assert_eq!(req.header("User-Agent").unwrap(), "curl/7.81.0");
+        assert_eq!(req.header("Accept").unwrap(), "*/*");
     }
 
     #[test]
@@ -84,9 +84,9 @@ mod tests {
         assert_eq!(req.request_line.method, "POST");
         assert_eq!(req.request_line.request_target, "http://localhost/submit");
         assert_eq!(req.request_line.http_version, "HTTP/1.1");
-        assert_eq!(req.headers("Host").unwrap(), "localhost");
-        assert_eq!(req.headers("Content-Type").unwrap(), "application/json");
-        assert_eq!(req.headers("Content-Length").unwrap(), "18");
+        assert_eq!(req.header("Host").unwrap(), "localhost");
+        assert_eq!(req.header("Content-Type").unwrap(), "application/json");
+        assert_eq!(req.header("Content-Length").unwrap(), "18");
     }
 
     #[test]

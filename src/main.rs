@@ -1,4 +1,4 @@
-mod request;
+pub mod request;
 
 use crate::request::Request;
 use std::io::BufReader;

@@ -43,8 +43,12 @@ impl Request {
         &self.request_line.http_version
     }
 
-    pub fn headers(&self, key: &str) -> Option<&str> {
+    pub fn header(&self, key: &str) -> Option<&str> {
         self.headers.get(&key.to_ascii_lowercase()).map(|s| s.as_str())
+    }
+
+    pub fn headers(&self) -> Option<HashMap<String, String>> {
+        Some(self.headers.clone())
     }
 
     pub fn body(&self) -> &[u8] {
