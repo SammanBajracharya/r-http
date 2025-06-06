@@ -31,13 +31,31 @@ impl Request {
         }
     }
 
-    fn read_full_line(reader: &mut dyn BufRead) -> Result<Vec<u8>> {
-        let mut buffer = Vec::new();
-        let mut temp_buf = [0u8, 1];
-        const MAX_LINE_LENGTH: usize = 8192; // Arbitrary limit to prevent excessive memory usage
+    pub fn method(&self) -> &str {
+        &self.request_line.method
+    }
 
+    pub fn request_target(&self) -> &str {
+        &self.request_line.request_target
+    }
+
+    pub fn http_version(&self) -> &str {
+        &self.request_line.http_version
+    }
+
+    pub fn headers(&self, key: &str) -> Option<&str> {
+        self.headers.get(&key.to_ascii_lowercase()).map(|s| s.as_str())
+    }
+
+    pub fn body(&self) -> &[u8] {
+        &self.body
+    }
+
+    fn read_as_bytes(reader: &mut dyn BufRead) -> Result<Vec<u8>> {
+        let mut buf = Vec::new();
+        let mut temp = Vec::new();
         loop {
-            let n = reader.read(&mut temp_buf)?;
+            let n = reader.read_until(b'\n', &mut temp)?;
             if n == 0 {
                 return Err(Error::new(
                     ErrorKind::UnexpectedEof,
@@ -45,26 +63,38 @@ impl Request {
                 ));
             }
 
-            if buffer.len() > MAX_LINE_LENGTH {
-                return Err(Error::new(
-                    ErrorKind::InvalidData,
-                    "Line exceeds maximum length",
-                ));
-            }
+            buf.extend_from_slice(&temp);
 
-            buffer.push(temp_buf[0]);
-            if buffer.len() >= 2 && &buffer[buffer.len() - 2..] == b"\r\n" {
-                return Ok(buffer);
+            if buf.len() >= 2 && &buf[buf.len() - 2..] == b"\r\n" {
+                break;
             }
         }
+        Ok(buf)
     }
 
     fn is_crlf(line: &[u8]) -> bool {
         line == b"\r\n"
     }
 
-    fn parse_request_line(reader: &mut dyn BufRead) -> std::io::Result<(String, String, String)> {
-        let line = Self::read_full_line(reader)?;
+    fn verify_target_url(method: &str, target: &str) -> std::io::Result<&'static str> {
+        if target.starts_with("http://") || target.starts_with("https://") {
+            Ok("absolute")
+        } else if target.starts_with('/') {
+            Ok("origin")
+        } else if target == "*" {
+            Ok("asterisk")
+        } else if method == "CONNECT" && target.contains(":") {
+            Ok("authority")
+        } else {
+            Err(Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid request target format",
+            ))
+        }
+    }
+
+    fn parse_request_line(reader: &mut dyn BufRead) -> std::io::Result<RequestLine> {
+        let line = Self::read_as_bytes(reader)?;
         if line.len() < 2 || !line.ends_with(b"\r\n") {
             return Err(Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -83,12 +113,14 @@ impl Request {
             ));
         }
 
-        let method = parts[0];
-        let request_target = parts[1];
-        let http_version = parts[2];
+        let request_line = RequestLine {
+            method: parts[0].to_string(),
+            request_target: parts[1].to_string(),
+            http_version: parts[2].to_string(),
+        };
 
-        match method {
-            "GET" | "POST" | "PUT" | "DELETE" | "HEAD" | "OPTIONS" | "PATCH" => {},
+        match request_line.method.as_str() {
+            "GET" | "POST" | "PUT" | "DELETE" | "HEAD" | "OPTIONS" | "PATCH" | "CONNECT" => {},
             _ => {
                 return Err(Error::new(
                     std::io::ErrorKind::InvalidData,
@@ -97,25 +129,18 @@ impl Request {
             }
         }
 
-        if !request_target.starts_with('/') {
-            return Err(Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Request target must start with '/'",
-            ));
-        }
-
-        if !http_version.starts_with("HTTP/") {
+        if !request_line.http_version.starts_with("HTTP/") {
             return Err(Error::new(
                 std::io::ErrorKind::InvalidData,
                 "HTTP version must start with 'HTTP/'",
             ));
         }
 
-        Ok((method.to_string(), request_target.to_string(), http_version.to_string()))
+        Ok(request_line)
     }
 
     fn parse_header_line(reader: &mut dyn BufRead) -> std::io::Result<HashMap<String, String>> {
-        let mut line = Self::read_full_line(reader)?;
+        let mut line = Self::read_as_bytes(reader)?;
         if line == b"\r\n" {
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -152,22 +177,40 @@ impl Request {
                 ));
             }
 
-            line = Self::read_full_line(reader)?;
+            line = Self::read_as_bytes(reader)?;
         }
 
         Ok(headers)
     }
 
     pub fn req_from_reader(reader: &mut dyn BufRead) -> Result<Request> {
-        let parts = Self::parse_request_line(reader)?;
-
-        let request_line = RequestLine {
-            method: parts.0.to_string(),
-            request_target: parts.1.to_string(),
-            http_version: parts.2.to_string(),
-        };
+        let mut request_line = Self::parse_request_line(reader)?;
 
         let headers = Self::parse_header_line(reader)?;
+
+        // reconstrucing target uri
+        let form = Self::verify_target_url(&request_line.method, &request_line.request_target)?;
+        // for now http
+        let scheme = "http";
+
+        match form {
+            "origin" => {
+                let host = headers.get("host")
+                    .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Host header is required for origin target"))?;
+                request_line.request_target = format!("{}://{}{}", scheme, host, request_line.request_target);
+            }
+            "asterisk" => {}
+            "authority" => {
+                request_line.request_target = format!("{}://{}", scheme, request_line.request_target);
+            }
+            "absolute" => {}
+            _ => {
+                return Err(Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    "Invalid request target format",
+                ));
+            }
+        }
 
         Ok(Request {
             request_line,

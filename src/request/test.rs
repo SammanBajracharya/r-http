@@ -46,11 +46,11 @@ mod tests {
         let req = Request::req_from_reader(&mut reader).expect("Failed to parse request");
 
         assert_eq!(req.request_line.method, "GET");
-        assert_eq!(req.request_line.request_target, "/");
+        assert_eq!(req.request_line.request_target, "http://localhost:42069/");
         assert_eq!(req.request_line.http_version, "HTTP/1.1");
-        assert_eq!(req.headers.get("Host").unwrap(), "localhost:42069");
-        assert_eq!(req.headers.get("User-Agent").unwrap(), "curl/7.81.0");
-        assert_eq!(req.headers.get("Accept").unwrap(), "*/*");
+        assert_eq!(req.headers("Host").unwrap(), "localhost:42069");
+        assert_eq!(req.headers("User-Agent").unwrap(), "curl/7.81.0");
+        assert_eq!(req.headers("Accept").unwrap(), "*/*");
     }
 
     #[test]
@@ -82,11 +82,11 @@ mod tests {
         let req = Request::req_from_reader(&mut reader).expect("Failed to parse request");
 
         assert_eq!(req.request_line.method, "POST");
-        assert_eq!(req.request_line.request_target, "/submit");
+        assert_eq!(req.request_line.request_target, "http://localhost/submit");
         assert_eq!(req.request_line.http_version, "HTTP/1.1");
-        assert_eq!(req.headers.get("Host").unwrap(), "localhost");
-        assert_eq!(req.headers.get("Content-Type").unwrap(), "application/json");
-        assert_eq!(req.headers.get("Content-Length").unwrap(), "18");
+        assert_eq!(req.headers("Host").unwrap(), "localhost");
+        assert_eq!(req.headers("Content-Type").unwrap(), "application/json");
+        assert_eq!(req.headers("Content-Length").unwrap(), "18");
     }
 
     #[test]
