@@ -43,6 +43,12 @@ fn handle_client(stream: &TcpStream) {
                 }
                 None => {}
             }
+            println!("--- Body ---");
+            if let Some(body) = req.body() {
+                println!("{}", String::from_utf8_lossy(body));
+            } else {
+                println!("No body");
+            }
         }
         Err(e) => {
             eprintln!("Error parsing request from {:?}: {}", peer, e);

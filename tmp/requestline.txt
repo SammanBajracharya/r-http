@@ -1,10 +1,14 @@
 Connected to server at port 42069
-Client conned from 127.0.0.1:48458
---- Request from Some(127.0.0.1:48458) ---
-Method: GET
-Target: http://localhost:42069/use-neovim-btw
+Client conned from 127.0.0.1:40404
+--- Request from Some(127.0.0.1:40404) ---
+Method: POST
+Target: http://localhost:42069/coffee
 Version: HTTP/1.1
---- Request ---
-accept => */*
-user-agent => curl/8.5.0
+--- Headers ---
 host => localhost:42069
+accept => */*
+content-type => application/json
+content-length => 39
+user-agent => curl/8.5.0
+--- Body ---
+{"type": "dark mode", "size": "medium"}

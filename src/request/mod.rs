@@ -1,7 +1,7 @@
 pub mod test;
 
 use std::collections::HashMap;
-use std::io::{BufRead, Error, ErrorKind, Result};
+use std::io::{BufRead, Error, ErrorKind, Result, Read};
 use std::str;
 
 const SINGLETON_HEADERS: &[&str] = &[
@@ -61,8 +61,9 @@ impl Request {
         Some(self.headers.clone())
     }
 
-    pub fn body(&self) -> &[u8] {
-        &self.body
+    pub fn body(&self) -> Option<&[u8]> {
+        if self.body.is_empty() { None }
+        else { Some(&self.body) }
     }
 
     fn read_as_bytes(reader: &mut dyn BufRead) -> Result<Vec<u8>> {
@@ -225,10 +226,47 @@ impl Request {
         Ok(headers)
     }
 
+    fn read_chunked_body(reader: &mut dyn BufRead) -> std::io::Result<Vec<u8>> {
+        let mut body: Vec<u8> = Vec::new();
+
+        loop {
+            let mut size_line = String::new();
+            reader.read_line(&mut size_line)?;
+            let size_str = size_line.trim_end();
+
+            let chunk_size = usize::from_str_radix(size_str, 16).map_err(|_| {
+                Error::new(ErrorKind::InvalidData, "Invalid chunk size")
+            })?;
+
+            if chunk_size == 0 { break; }
+
+            let mut chunk = vec![0; chunk_size];
+            reader.read_exact(&mut chunk)?;
+            body.extend(chunk);
+
+            let mut crlf = [0u8; 2];
+            reader.read_exact(&mut crlf)?;
+            if &crlf != b"\r\n" {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "Expected CRLF after chunk data",
+                ));
+            }
+        }
+
+        Ok(body)
+    }
+
     pub fn req_from_reader(reader: &mut dyn BufRead) -> Result<Request> {
         let mut request_line = Self::parse_request_line(reader)?;
 
         let headers = Self::parse_header_line(reader)?;
+        if headers.contains_key("content-length") && headers.contains_key("transfer-encoding") {
+            return Err(Error::new(
+                ErrorKind::InvalidData,
+                "Cannot have both Content-Length and Transfer-Encoding headers",
+            ));
+        }
 
         let form = Self::verify_target_url(&request_line.method, &request_line.request_target)?;
         let scheme = "http";
@@ -251,10 +289,29 @@ impl Request {
             }
         }
 
+        let mut body: Vec<u8> = Vec::new();
+        if let Some(content_length) = headers.get("content-length") {
+            let len: usize = content_length.parse().map_err(|_| {
+                Error::new(ErrorKind::InvalidData, "Invalid Content-Length value")
+            })?;
+            let mut limited = reader.take(len as u64);
+            limited.read_to_end(&mut body).map_err(|e| {
+                Error::new(ErrorKind::UnexpectedEof, format!("Failed to read body: {}", e))
+            })?;
+        } else if let Some(transfer_encoding) = headers.get("transfer-encoding") {
+            if transfer_encoding != "chunked" {
+                return Err(Error::new(
+                    ErrorKind::InvalidData,
+                    "Unsupported Transfer-Encoding, only 'chunked' is supported",
+                ));
+            }
+            body = Self::read_chunked_body(reader)?;
+        }
+
         Ok(Request {
             request_line,
             headers,
-            body: Vec::new(),
+            body,
         })
     }
 }
