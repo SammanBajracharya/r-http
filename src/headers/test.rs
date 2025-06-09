@@ -47,9 +47,9 @@ mod tests {
         let mut reader = BufReader::new(chunk_reader);
         let result = Headers::parse_header_line(&mut reader).expect("Failed to parse request");
 
-        assert_eq!(result.get("host").unwrap(), "localhost:42069");
-        assert_eq!(result.get("user-agent").unwrap(), "curl/7.81.0");
-        assert_eq!(result.get("accept").unwrap(), "*/*");
+        assert_eq!(result.get_value("host").unwrap(), "localhost:42069");
+        assert_eq!(result.get_value("user-agent").unwrap(), "curl/7.81.0");
+        assert_eq!(result.get_value("accept").unwrap(), "*/*");
     }
 
     #[test]
@@ -62,6 +62,68 @@ mod tests {
         assert!(
             result.is_err(),
             "Invalid header should not allow space before colon"
+        );
+    }
+
+    #[test]
+    fn test_duplicate_singleton_header() {
+        let request = b"Host: example.com\r\nHost: duplicate.com\r\n\r\n";
+        let chunk_reader = ChunkReader::new(request, 5);
+        let mut reader = std::io::BufReader::new(chunk_reader);
+        let result = Headers::parse_header_line(&mut reader);
+        assert!(
+            result.is_err(),
+            "Duplicate singleton header should cause error"
+        );
+    }
+
+
+    #[test]
+    fn test_multiple_same_non_singleton_header() {
+        let request = b"Accept: text/html\r\nAccept: application/json\r\n\r\n";
+        let chunk_reader = ChunkReader::new(request, 4);
+        let mut reader = std::io::BufReader::new(chunk_reader);
+        let result = Headers::parse_header_line(&mut reader).expect("Failed to parse headers");
+        assert_eq!(
+            result.get_value("accept").unwrap(),
+            "text/html, application/json",
+        );
+    }
+
+    #[test]
+    fn test_header_with_invalid_characters() {
+        let request = b"Bad@Header: value\r\n\r\n";
+        let chunk_reader = ChunkReader::new(request, 5);
+        let mut reader = std::io::BufReader::new(chunk_reader);
+        let result = Headers::parse_header_line(&mut reader);
+        assert!(
+            result.is_err(),
+            "Invalid header should not allow alphanumeric characters in field name",
+        );
+    }
+
+    #[test]
+    fn test_header_line_without_colon() {
+        let request = b"InvalidHeaderLine\r\n\r\n";
+        let chunk_reader = ChunkReader::new(request, 5);
+        let mut reader = std::io::BufReader::new(chunk_reader);
+        let result = Headers::parse_header_line(&mut reader);
+        assert!(
+            result.is_err(),
+            "Invalid header format",
+        );
+    }
+
+    #[test]
+    fn test_empty_header_value() {
+        let request = b"X-Empty-Header:\r\n\r\n";
+        let chunk_reader = ChunkReader::new(request, 5);
+        let mut reader = std::io::BufReader::new(chunk_reader);
+        let result = Headers::parse_header_line(&mut reader).expect("Failed to parse headers");
+        assert_eq!(
+            result.get_value("x-empty-header").unwrap(),
+            "",
+            "Empty header value should be allowed and parsed as empty string"
         );
     }
 }

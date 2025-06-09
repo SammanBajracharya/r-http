@@ -5,10 +5,11 @@ use std::collections::HashMap;
 use std::io::{BufRead, Error, ErrorKind};
 use std::ops::Deref;
 
-pub struct Headers(HashMap<String, String>);
+#[derive(Debug)]
+pub struct Headers(HashMap<String, (String, String)>);
 
 impl Deref for Headers {
-    type Target = HashMap<String, String>;
+    type Target = HashMap<String, (String, String)>;
 
     fn deref(&self) -> &Self::Target {
         &self.0
@@ -54,7 +55,15 @@ impl Headers {
         )
     }
 
-    fn parse_header_line(reader: &mut dyn BufRead) -> std::io::Result<Headers> {
+    pub fn get_value(&self, key: &str) -> Option<&str> {
+        self.0.get(&key.to_ascii_lowercase()).map(|(_, v)| v.as_str())
+    }
+
+    pub fn original_name(&self, key: &str) -> Option<&str> {
+        self.0.get(&key.to_ascii_lowercase()).map(|(k, _)| k.as_str())
+    }
+
+    pub fn parse_header_line(reader: &mut dyn BufRead) -> std::io::Result<Headers> {
         let mut line = Self::read_as_bytes(reader)?;
         if line == b"\r\n" {
             return Err(std::io::Error::new(
@@ -63,7 +72,7 @@ impl Headers {
             ));
         }
 
-        let mut headers = HashMap::new();
+        let mut headers: HashMap<String, (String, String)> = HashMap::new();
         let mut line_str;
 
         loop {
@@ -91,27 +100,23 @@ impl Headers {
                 if headers.contains_key(&key_lower) && SINGLETON_HEADERS.contains(&key_lower.as_str()) {
                     return Err(Error::new(
                         std::io::ErrorKind::InvalidData,
-                        format!("Duplicate header field {} not allowed", key),
+                        "Duplicate singleton header should cause error",
                     ));
                 }
 
-                // WE DONOT PRESERVER ORIGINAL FIELD NAMES, SHOULD THO
-
                 if headers.contains_key(&key_lower) && !SINGLETON_HEADERS.contains(&key_lower.as_str()) {
-                    headers
-                        .entry(key_lower)
-                        .and_modify(|v: &mut String| {
-                            v.push_str(", ");
-                            v.push_str(value_trimmed);
-                        })
-                        .or_insert_with(|| value_trimmed.to_string());
-                    continue;
+                    println!("Warning: Duplicate header found: {}", key_lower);
+                    if let Some((_, existing_value)) = headers.get_mut(&key_lower) {
+                        existing_value.push_str(", ");
+                        existing_value.push_str(value_trimmed);
+                    }
+                    break;
                 }
 
                 headers.
                     insert(
                         key_lower,
-                        value_trimmed.to_string(),
+                        (key.to_string(), value_trimmed.to_string()),
                     );
             } else {
                 return Err(Error::new(
