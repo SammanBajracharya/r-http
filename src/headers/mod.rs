@@ -102,22 +102,19 @@ impl Headers {
                         std::io::ErrorKind::InvalidData,
                         "Duplicate singleton header should cause error",
                     ));
-                }
-
-                if headers.contains_key(&key_lower) && !SINGLETON_HEADERS.contains(&key_lower.as_str()) {
+                } else if headers.contains_key(&key_lower) && !SINGLETON_HEADERS.contains(&key_lower.as_str()) {
                     println!("Warning: Duplicate header found: {}", key_lower);
                     if let Some((_, existing_value)) = headers.get_mut(&key_lower) {
                         existing_value.push_str(", ");
                         existing_value.push_str(value_trimmed);
                     }
-                    break;
+                } else {
+                    headers.
+                        insert(
+                            key_lower,
+                            (key.to_string(), value_trimmed.to_string()),
+                        );
                 }
-
-                headers.
-                    insert(
-                        key_lower,
-                        (key.to_string(), value_trimmed.to_string()),
-                    );
             } else {
                 return Err(Error::new(
                     std::io::ErrorKind::InvalidData,

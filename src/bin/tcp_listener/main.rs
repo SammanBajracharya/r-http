@@ -34,10 +34,11 @@ fn handle_client(stream: &TcpStream) {
             println!("Method: {}", req.method());
             println!("Target: {}", req.request_target());
             println!("Version: {}", req.http_version());
+            println!("--- Headers ---");
             match req.headers() {
                 Some(headers) => {
                     for (k, v) in headers.iter() {
-                        println!("Header: {} => {}", k, v);
+                        println!("{} => {}", k, v);
                     }
                 }
                 None => {}

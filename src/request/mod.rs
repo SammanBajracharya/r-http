@@ -4,6 +4,16 @@ use std::collections::HashMap;
 use std::io::{BufRead, Error, ErrorKind, Result};
 use std::str;
 
+const SINGLETON_HEADERS: &[&str] = &[
+    "content-length",
+    "host",
+    "authorization",
+    "content-type",
+    "content-encoding",
+    "content-range",
+    "date",
+];
+
 #[derive(Debug)]
 pub struct RequestLine {
     http_version: String,
@@ -143,7 +153,14 @@ impl Request {
         Ok(request_line)
     }
 
-    fn parse_header_line(reader: &mut dyn BufRead) -> std::io::Result<HashMap<String, String>> {
+    fn is_token_char(c: char) -> bool {
+        c.is_ascii_alphanumeric() || matches!(c,
+            '!' | '#' | '$' | '%' | '&' | '\'' | '*' | '+' |
+            '-' | '.' | '^' | '_' | '`' | '|' | '~'
+        )
+    }
+
+    pub fn parse_header_line(reader: &mut dyn BufRead) -> std::io::Result<HashMap<String, String>> {
         let mut line = Self::read_as_bytes(reader)?;
         if line == b"\r\n" {
             return Err(std::io::Error::new(
@@ -152,7 +169,7 @@ impl Request {
             ));
         }
 
-        let mut headers = HashMap::new();
+        let mut headers: HashMap<String, String> = HashMap::new();
         let mut line_str;
 
         loop {
@@ -160,20 +177,41 @@ impl Request {
 
             line_str = str::from_utf8(&line[..line.len() - 2])
                 .map_err(|_| Error::new(std::io::ErrorKind::InvalidData, "Invalid UTF-8 in header line"))?;
-            if let Some((key, value)) = line_str.trim_end_matches("\r\n").split_once(':') {
-                let key_lower = key.trim().to_ascii_lowercase();
-                // if headers.contains_key(&key_lower) {
-                //     return Err(Error::new(
-                //         std::io::ErrorKind::InvalidData,
-                //         "Duplicate header found",
-                //     ));
-                // }
+            if let Some((key, value)) = line_str.split_once(':') {
 
-                headers.
-                    insert(
-                        key_lower,
-                        value.trim().to_string(),
-                    );
+                if key.chars().any(|c| c.is_ascii_whitespace()) {
+                    return Err(Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Invalid header should not allow whitespace in field name",
+                    ));
+                } else if key.chars().any(|c| !Self::is_token_char(c)) {
+                    return Err(Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Invalid header should not allow alphanumeric characters in field name",
+                    ));
+                }
+
+                let key_lower = key.to_ascii_lowercase();
+                let value_trimmed = value.trim();
+
+                if headers.contains_key(&key_lower) && SINGLETON_HEADERS.contains(&key_lower.as_str()) {
+                    return Err(Error::new(
+                        std::io::ErrorKind::InvalidData,
+                        "Duplicate singleton header should cause error",
+                    ));
+                } else if headers.contains_key(&key_lower) && !SINGLETON_HEADERS.contains(&key_lower.as_str()) {
+                    println!("Warning: Duplicate header found: {}", key_lower);
+                    if let Some(existing_value) = headers.get_mut(&key_lower) {
+                        existing_value.push_str(", ");
+                        existing_value.push_str(value_trimmed);
+                    }
+                } else {
+                    headers.
+                        insert(
+                            key_lower,
+                            value_trimmed.to_string(),
+                        );
+                }
             } else {
                 return Err(Error::new(
                     std::io::ErrorKind::InvalidData,
@@ -192,9 +230,7 @@ impl Request {
 
         let headers = Self::parse_header_line(reader)?;
 
-        // reconstrucing target uri
         let form = Self::verify_target_url(&request_line.method, &request_line.request_target)?;
-        // for now http
         let scheme = "http";
 
         match form {
@@ -203,11 +239,10 @@ impl Request {
                     .ok_or_else(|| Error::new(ErrorKind::InvalidData, "Host header is required for origin target"))?;
                 request_line.request_target = format!("{}://{}{}", scheme, host, request_line.request_target);
             }
-            "asterisk" => {}
             "authority" => {
                 request_line.request_target = format!("{}://{}", scheme, request_line.request_target);
             }
-            "absolute" => {}
+            "asterisk" | "absolute" => {}
             _ => {
                 return Err(Error::new(
                     std::io::ErrorKind::InvalidData,
