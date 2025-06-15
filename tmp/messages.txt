@@ -1,6 +1,0 @@
-Connected to server at port 42069
-New client connected
-hello
-world
-this is a test
-Connection closed
