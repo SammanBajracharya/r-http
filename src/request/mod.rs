@@ -23,7 +23,7 @@ pub struct RequestLine {
 
 #[derive(Debug)]
 pub struct Request {
-    request_line: RequestLine,
+    pub request_line: RequestLine,
     headers: HashMap<String, String>,
     body: Vec<u8>,
 }
@@ -47,6 +47,29 @@ impl Request {
 
     pub fn request_target(&self) -> &str {
         &self.request_line.request_target
+    }
+
+    pub fn path(&self) -> &str {
+        match self.request_line.request_target.find("://") {
+            Some(idx) => {
+                let after_scheme = &self.request_line.request_target[idx + 3..];
+                match after_scheme.find('/') {
+                    Some(path_start) => &after_scheme[path_start..],
+                    None => "/",
+                }
+            }
+            None => {
+                if self.request_line.request_target.starts_with('/') {
+                    &self.request_line.request_target
+                } else {
+                    "/"
+                }
+            }
+        }
+    }
+
+    pub fn path_segments(&self) -> Vec<&str> {
+        self.path().split('/').filter(|s| !s.is_empty()).collect()
     }
 
     pub fn http_version(&self) -> &str {
@@ -85,10 +108,6 @@ impl Request {
             }
         }
         Ok(buf)
-    }
-
-    fn is_crlf(line: &[u8]) -> bool {
-        line == b"\r\n"
     }
 
     fn verify_target_url(method: &str, target: &str) -> std::io::Result<&'static str> {

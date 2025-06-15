@@ -1,5 +1,7 @@
-pub mod request;
 pub mod headers;
+pub mod request;
+pub mod response;
+pub mod server;
 
 use crate::request::Request;
 use std::io::BufReader;
